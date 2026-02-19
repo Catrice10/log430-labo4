@@ -56,7 +56,7 @@ jobs:
         docker compose down -v || true
         docker volume prune -f
 
-    - name: Build et demarrage des service #test
+    - name: Build et demarrage des service
       run: |
         docker compose up -d --build
 
