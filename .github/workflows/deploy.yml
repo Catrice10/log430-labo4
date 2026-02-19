@@ -16,7 +16,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Verifier les fichiers requis
+    - name: Verifier les fichiers requis 
       run: |
         if [ ! -f "docker-compose.yml" ]; then
           echo "ERREUR: docker-compose.yml manquant"
