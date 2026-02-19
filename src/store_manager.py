@@ -108,7 +108,6 @@ def get_stocks_overview():
     rows = get_stock_overview()
     return jsonify(rows)
 
-# Endpoint that allows suppliers to check stock
 @app.post('/stocks/graphql-query')
 def graphql_supplier():
     data = request.get_json()
