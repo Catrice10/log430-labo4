@@ -15,6 +15,17 @@ jobs:
 
     - name: Checkout code
       uses: actions/checkout@v4
+    
+    - name: Creer fichier .env
+      run: |
+        echo "DB_HOST=mysql" >> .env
+        echo "DB_PORT=3306" >> .env
+        echo "DB_NAME=labo04_db" >> .env
+        echo "DB_USER=user_labo04" >> .env
+        echo "DB_PASSWORD=password_labo04" >> .env
+        echo "REDIS_HOST=redis" >> .env
+        echo "REDIS_PORT=6379" >> .env
+        echo "REDIS_DB=0" >> .env
 
     - name: Verifier les fichiers requis 
       run: |
@@ -98,7 +109,7 @@ jobs:
     - name: Verifier le health check
       run: |
         sleep 5
-        STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health-check || echo "000")
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health-check || echo "000")
         if [ "$STATUS" = "200" ]; then
           echo "Health check OK"
         else
