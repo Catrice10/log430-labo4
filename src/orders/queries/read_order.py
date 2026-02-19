@@ -29,7 +29,6 @@ def get_highest_spending_users_mysql():
     """Get report of highest spending users from MySQL"""
     session = get_sqlalchemy_session()
     limit = 10
-    
     try:
         results = session.query(
             Order.user_id,
@@ -54,7 +53,6 @@ def get_best_selling_products_mysql():
     session = get_sqlalchemy_session()
     limit = 100
     result = []
-    
     try:
         order_items = session.query(
             OrderItem.product_id,
@@ -63,36 +61,34 @@ def get_best_selling_products_mysql():
          .order_by(func.sum(OrderItem.quantity).desc())\
          .limit(limit)\
          .all()
-        
         for order_item in order_items:
             result.append({
                 "product_id": order_item[0],
                 "quantity": round(order_item[1], 2)
             })
-
         return result
-
     finally:
         session.close()
 
-def get_highest_spending_users_redis():
+def get_highest_spending_users_redis(skip_cache=False):
     """Get report of highest spending users from Redis"""
     result = []
+    r = get_redis_conn()
+    cached = r.get("report:highest_spenders")
+    logger.debug(f"Dans le cache: {cached}")
+    if cached and not skip_cache:
+        return json.loads(cached)
     try: 
-        start_time = time.time()
-        # TODO: optimiser
-        r = get_redis_conn()
+        logger.debug("Créer le rapport highest_spenders")
         limit = 10
         order_keys = r.keys("order:*")
         spending = defaultdict(float)
-        
         for key in order_keys:
             order_data = r.hgetall(key)
             if "user_id" in order_data and "total_amount" in order_data:
                 user_id = int(order_data["user_id"])
                 total = float(order_data["total_amount"])
                 spending[user_id] += total
-
         # Trier par total dépensé (décroissant), limite X
         highest_spending_users = sorted(spending.items(), key=lambda x: x[1], reverse=True)[:limit]
         for user in highest_spending_users:
@@ -100,25 +96,25 @@ def get_highest_spending_users_redis():
                 "user_id": user[0],
                 "total_expense": round(user[1], 2)
             })
-
+        logger.debug(f"Résultat JSON: {result}")
+        r.set('report:highest_spenders', json.dumps(result))
     except Exception as e:
         return {'error': str(e)}
-
-    end_time = time.time()
-    logger.debug(f"Executed in {end_time - start_time} seconds")
     return result
 
-def get_best_selling_products_redis():
+def get_best_selling_products_redis(skip_cache=False):
     """Get report of best selling products by quantity sold from Redis"""
     result = []
+    r = get_redis_conn()
+    cached = r.get("report:best_sellers")
+    logger.debug(f"Dans le cache: {cached}")
+    if cached and not skip_cache:
+        return json.loads(cached)
     try:
-        start_time = time.time()
-        # TODO: optimiser
-        r = get_redis_conn()
+        logger.debug("Créer le rapport best_sellers")
         limit = 10
         order_keys = r.keys("order:*")
         product_sales = defaultdict(int)
-        
         for order_key in order_keys:
             order_data = r.hgetall(order_key)
             if "items" in order_data:
@@ -126,12 +122,10 @@ def get_best_selling_products_redis():
                     products = json.loads(order_data["items"])
                 except Exception:
                     continue
-
                 for item in products:
                     product_id = int(item.get("product_id", 0))
                     quantity = int(item.get("quantity", 0))
                     product_sales[product_id] += quantity
-
         # Trier par total vendu (décroissant), limite X
         best_selling = sorted(product_sales.items(), key=lambda x: x[1], reverse=True)[:limit]
         for product in best_selling:
@@ -139,18 +133,16 @@ def get_best_selling_products_redis():
                 "product_id": product[0],
                 "quantity_sold": product[1]
             })
-
+        logger.debug(f"Résultat JSON: {result}")
+        r.set('report:best_sellers', json.dumps(result))
     except Exception as e:
         return {'error': str(e)}
-    
-    end_time = time.time()
-    logger.debug(f"Executed in {end_time - start_time} seconds")
     return result
 
-def get_highest_spending_users():
+def get_highest_spending_users(skip_cache=False):
     """Get report of highest spending users"""
-    return get_highest_spending_users_redis()
+    return get_highest_spending_users_redis(skip_cache)
 
-def get_best_selling_products():
+def get_best_selling_products(skip_cache=False):
     """Get report of best selling products"""
-    return get_best_selling_products_redis()
+    return get_best_selling_products_redis(skip_cache)

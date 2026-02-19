@@ -1,0 +1,119 @@
+name: Deploy Store Manager Labo 04
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+    - name: Nettoyage avant checkout
+      run: |
+        sudo chown -R $USER:$USER . || true
+        docker system prune -f
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Verifier les fichiers requis
+      run: |
+        if [ ! -f "docker-compose.yml" ]; then
+          echo "ERREUR: docker-compose.yml manquant"
+          exit 1
+        fi
+        if [ ! -f ".env" ]; then
+          echo "ERREUR: .env manquant"
+          exit 1
+        fi
+        if [ ! -f "nginx.conf" ]; then
+          echo "ERREUR: nginx.conf manquant"
+          exit 1
+        fi
+
+    - name: Creer le reseau Docker
+      run: |
+        docker network create labo04-network 2>/dev/null || true
+
+    - name: Generer les donnees fictives
+      run: |
+        pip install faker --break-system-packages || true
+        python generators/data_generator.py
+
+    - name: Arreter les services existants
+      run: |
+        docker compose down -v || true
+        docker volume prune -f
+
+    - name: Build et demarrage des services
+      run: |
+        docker compose up -d --build
+
+        echo "Attente de 10 secondes..."
+        sleep 10
+
+        echo "=== Etat des containers ==="
+        docker ps -a
+
+    - name: Attendre que les services soient prets
+      run: |
+        MAX_WAIT=180
+        ELAPSED=0
+        echo "Attente de MySQL..."
+        until [ "$(docker inspect --format='{{.State.Health.Status}}' log430-labo4-mysql-1 2>/dev/null)" = "healthy" ]; do
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "ERREUR: MySQL n'est pas devenu healthy apres ${MAX_WAIT}s"
+            docker logs log430-labo4-mysql-1 --tail 50
+            exit 1
+          fi
+          sleep 5
+          ELAPSED=$((ELAPSED + 5))
+        done
+        echo "MySQL est pret"
+
+        ELAPSED=0
+        echo "Attente de Redis..."
+        until [ "$(docker inspect --format='{{.State.Health.Status}}' log430-labo4-redis-1 2>/dev/null)" = "healthy" ]; do
+          if [ $ELAPSED -ge 60 ]; then
+            echo "ERREUR: Redis n'est pas devenu healthy apres 60s"
+            docker logs log430-labo4-redis-1 --tail 50
+            exit 1
+          fi
+          sleep 3
+          ELAPSED=$((ELAPSED + 3))
+        done
+        echo "Redis est pret"
+
+    - name: Verifier le store_manager
+      run: |
+        sleep 5
+        if docker ps | grep -q store_manager; then
+          echo "store_manager est en cours d'execution"
+        else
+          echo "ERREUR: store_manager n'est pas en cours d'execution"
+          docker logs log430-labo4-store_manager_1-1 --tail 50
+          exit 1
+        fi
+
+    - name: Verifier le health check
+      run: |
+        sleep 5
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health-check || echo "000")
+        if [ "$STATUS" = "200" ]; then
+          echo "Health check OK"
+        else
+          echo "ERREUR: Health check a echoue (status: $STATUS)"
+          exit 1
+        fi
+
+    - name: Afficher le statut final
+      if: success()
+      run: |
+        echo "=== Deploiement reussi ==="
+        docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+    - name: Nettoyage post-deploiement
+      if: always()
+      run: |
+        docker image prune -f
+        sudo chown -R $USER:$USER .
